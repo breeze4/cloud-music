@@ -1,6 +1,6 @@
 # MusicGen Batch Generation System
 
-Generate multiple AI music files from text prompts using AWS cloud infrastructure. Cost-effective batch processing with GPU spot instances.
+Generate multiple AI music files from text prompts using AWS cloud infrastructure. Cost-effective batch processing with GPU on-demand instances.
 
 ## 🚀 Quick Start
 
@@ -36,20 +36,20 @@ uv run python monitor_worker.py s3
 
 ## 📋 What It Does
 
-1. **Launcher** queries spot prices and launches GPU instance with your max price
+1. **Launcher** shows on-demand pricing and launches GPU instance
 2. **Worker** downloads MusicGen model, processes prompts, uploads .wav files to S3
 3. **Cost Report** tracks generation time and estimated costs per file
 
 ## 💰 Expected Costs
 
-- **Test run** (2-4 short prompts): $0.10 - $0.30
-- **Full batch** (10+ prompts): $0.50 - $2.00
-- Based on $0.40/hour max spot price
+- **Test run** (2-4 short prompts): $0.20 - $0.50
+- **Full batch** (10+ prompts): $1.00 - $3.00
+- Based on $0.526/hour on-demand rate for g4dn.xlarge
 
 ## 📁 Project Structure
 
 ```
-├── launcher.py          # Launch spot instances
+├── launcher.py          # Launch on-demand instances
 ├── worker.py           # Generate music on EC2
 ├── monitor_worker.py   # Easy log monitoring
 ├── prompts.txt         # Your music prompts
@@ -110,7 +110,7 @@ AWS_ACCOUNT_ID=your-account-id
 AWS_REGION=us-west-2
 S3_BUCKET_NAME=your-bucket-name
 KEY_PAIR_NAME=your-key-pair
-MAX_SPOT_PRICE=0.40
+INSTANCE_TYPE=g4dn.xlarge
 IAM_ROLE_NAME=your-iam-role
 AMI_ID=ami-xxxxxxxxx
 ```
@@ -138,9 +138,8 @@ def456_epic.wav,cinematic orchestral,180,234.7,0.026
 ## 🚨 Important Warnings
 
 - **Manual shutdown required** - EC2 instances don't auto-terminate
-- **Spot interruptions possible** - System handles gracefully with idempotency
 - **First run slower** - Downloads 6GB model (~10 minutes)
-- **Cost estimates** - Based on max spot price, actual may be lower
+- **Cost estimates** - Based on fixed on-demand pricing
 
 ## 🔍 Troubleshooting
 
@@ -200,8 +199,8 @@ uv run python monitor_worker.py s3
 ## 🎯 Success Criteria
 
 ✅ System working correctly when:
-- Launcher shows current spot pricing
-- Spot instance launches successfully  
+- Launcher shows on-demand pricing
+- Instance launches successfully  
 - Worker detects GPU and loads MusicGen model
 - Prompts generate .wav files in S3
 - Cost report uploaded with accurate calculations

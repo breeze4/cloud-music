@@ -2,8 +2,8 @@
 """
 MusicGen Batch System Launcher
 
-This script manages EC2 spot instance lifecycle for the batch MusicGen generation system.
-It checks for existing instances, displays current spot pricing, and launches new instances as needed.
+This script manages EC2 on-demand instance lifecycle for the batch MusicGen generation system.
+It checks for existing instances, displays current on-demand pricing, and launches new instances as needed.
 """
 
 import boto3
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 class MusicGenLauncher:
-    """Manages EC2 spot instances for MusicGen batch processing"""
+    """Manages EC2 on-demand instances for MusicGen batch processing"""
     
     def __init__(self):
         try:
@@ -105,12 +105,6 @@ class MusicGenLauncher:
             # Test EC2 permissions
             self.ec2_client.describe_instances(MaxResults=5)
             
-            # Test spot price permissions
-            self.ec2_client.describe_spot_price_history(
-                InstanceTypes=[config.aws.instance_type],
-                MaxResults=1
-            )
-            
             logger.info("AWS permissions check passed.")
             return True
             
@@ -126,77 +120,19 @@ class MusicGenLauncher:
             logger.error(f"Unexpected error checking permissions: {e}")
             return False
     
-    def get_current_spot_prices(self) -> Dict[str, float]:
-        """
-        Get current spot prices for the configured instance type across availability zones.
-        
-        Returns:
-            Dictionary mapping availability zone to current spot price
-        """
-        try:
-            logger.info(f"Querying spot price history for {config.aws.instance_type} in {config.aws.region}")
-            response = self.ec2_client.describe_spot_price_history(
-                InstanceTypes=[config.aws.instance_type],
-                ProductDescriptions=['Linux/UNIX'],
-                MaxResults=20  # Get recent prices across AZs - removed StartTime=None
-            )
-            logger.info(f"Received {len(response.get('SpotPriceHistory', []))} spot price records")
-            
-            # Group by availability zone and get the most recent price for each
-            zone_prices = {}
-            for price_info in response['SpotPriceHistory']:
-                zone = price_info['AvailabilityZone']
-                price = float(price_info['SpotPrice'])
-                timestamp = price_info['Timestamp']
-                
-                logger.debug(f"Spot price record: {zone} = ${price:.3f} at {timestamp}")
-                
-                # Keep the most recent (first in results) price for each zone
-                if zone not in zone_prices:
-                    zone_prices[zone] = price
-            
-            logger.info(f"Final zone prices: {zone_prices}")
-            return zone_prices
-            
-        except ClientError as e:
-            logger.error(f"AWS ClientError getting spot prices: {e}")
-            logger.error(f"Error code: {e.response.get('Error', {}).get('Code', 'Unknown')}")
-            logger.error(f"Error message: {e.response.get('Error', {}).get('Message', 'Unknown')}")
-            return {}
-        except Exception as e:
-            logger.error(f"Unexpected error getting spot prices: {e}")
-            logger.error(f"Exception type: {type(e)}")
-            import traceback
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            return {}
     
-    def display_spot_prices(self, zone_prices: Dict[str, float]) -> None:
-        """Display current spot pricing information"""
-        if not zone_prices:
-            print("\n⚠️  Could not retrieve current spot prices.")
-            print(f"Proceeding with configured max price: ${config.aws.max_spot_price:.3f}/hour")
-            return
-        
-        print(f"\n💰 Current spot prices for {config.aws.instance_type}:")
+    def display_on_demand_pricing(self, hourly_rate: float) -> None:
+        """Display on-demand pricing information"""
+        print(f"\n💰 On-demand pricing for {config.aws.instance_type}:")
         print("-" * 60)
-        
-        for zone, price in sorted(zone_prices.items()):
-            status = "✅" if price <= config.aws.max_spot_price else "❌"
-            savings = ((config.aws.max_spot_price - price) / config.aws.max_spot_price) * 100
-            
-            print(f"{status} {zone:<15} ${price:.3f}/hour", end="")
-            if price <= config.aws.max_spot_price:
-                print(f" (saves {savings:.1f}%)")
-            else:
-                print(f" (exceeds max by ${price - config.aws.max_spot_price:.3f})")
-        
-        print(f"\nConfigured max price: ${config.aws.max_spot_price:.3f}/hour")
+        print(f"   Hourly Rate: ${hourly_rate:.3f}/hour")
         
         # Show cost estimates
         print(f"\nEstimated costs for common scenarios:")
-        print(f"  • 1 hour of generation:  ${config.aws.max_spot_price:.2f}")
-        print(f"  • 4 hours of generation: ${config.aws.max_spot_price * 4:.2f}")
-        print(f"  • 8 hours of generation: ${config.aws.max_spot_price * 8:.2f}")
+        print(f"  • 1 hour of generation:  ${hourly_rate:.2f}")
+        print(f"  • 4 hours of generation: ${hourly_rate * 4:.2f}")
+        print(f"  • 8 hours of generation: ${hourly_rate * 8:.2f}")
+    
     
     def get_user_confirmation(self) -> bool:
         """
@@ -208,8 +144,9 @@ class MusicGenLauncher:
         print("\n" + "="*60)
         print("⚠️  COST WARNING")
         print("="*60)
-        print(f"You are about to launch a {config.aws.instance_type} spot instance")
-        print(f"with a maximum price of ${config.aws.max_spot_price:.2f}/hour.")
+        on_demand_rate = self.get_on_demand_pricing()
+        print(f"You are about to launch a {config.aws.instance_type} on-demand instance")
+        print(f"at a rate of ${on_demand_rate:.2f}/hour.")
         print()
         print("⚠️  REMEMBER: You must manually terminate the instance when done!")
         print("⚠️  Forgetting to terminate will result in ongoing charges!")
@@ -272,27 +209,82 @@ class MusicGenLauncher:
             logger.error(f"Failed to get/create security group: {e}")
             raise
     
-    def launch_spot_instance(self) -> bool:
+    def encode_user_data(self, user_data: str) -> str:
+        """Properly encode UserData script for EC2"""
+        import base64
+        logger.debug(f"UserData script length: {len(user_data)} characters")
+        logger.debug(f"UserData script first 200 chars: {user_data[:200]}...")
+        encoded = base64.b64encode(user_data.encode('utf-8')).decode('utf-8')
+        logger.debug(f"Encoded UserData length: {len(encoded)} characters")
+        return encoded
+    
+    def tag_instance(self, instance_id: str) -> None:
+        """Tag an EC2 instance with our standard tags"""
+        try:
+            logger.info(f"Tagging instance {instance_id}")
+            self.ec2_client.create_tags(
+                Resources=[instance_id],
+                Tags=[
+                    {
+                        'Key': 'Name',
+                        'Value': config.aws.worker_tag
+                    },
+                    {
+                        'Key': 'Project', 
+                        'Value': 'musicgen-batch'
+                    },
+                    {
+                        'Key': 'AutoShutdown',
+                        'Value': 'manual'
+                    }
+                ]
+            )
+            logger.info(f"Successfully tagged instance {instance_id}")
+        except Exception as e:
+            logger.error(f"Failed to tag instance {instance_id}: {e}")
+    
+    def get_on_demand_pricing(self) -> float:
         """
-        Launch a spot instance with the configured parameters.
+        Get on-demand pricing for the configured instance type.
         
         Returns:
-            True if spot request was submitted successfully, False otherwise
+            On-demand hourly rate in USD
+        """
+        # Static pricing for common instance types (approximate)
+        pricing = {
+            'g4dn.xlarge': 0.526,
+            'g4dn.2xlarge': 0.752,
+            'p3.2xlarge': 3.06,
+            'p3.8xlarge': 12.24,
+            'm5.large': 0.096,
+            'm5.xlarge': 0.192
+        }
+        
+        return pricing.get(config.aws.instance_type, 0.50)  # Default fallback
+    
+    def launch_instance(self) -> bool:
+        """
+        Launch an on-demand instance with the configured parameters.
+        
+        Returns:
+            True if instance was launched successfully, False otherwise
         """
         try:
             # Get or create security group
             security_group_id = self.get_or_create_security_group()
             
-            # Prepare the spot instance request
-            spot_request = {
+            # Prepare the instance launch parameters
+            launch_params = {
                 'ImageId': config.aws.ami_id,
                 'InstanceType': config.aws.instance_type,
                 'KeyName': config.aws.key_pair_name,
                 'SecurityGroupIds': [security_group_id],
-                'UserData': config.get_user_data_script(),
+                'UserData': self.encode_user_data(config.get_user_data_script()),
                 'IamInstanceProfile': {
-                    'Arn': config.aws.iam_role_arn
+                    'Name': config.aws.iam_role_name
                 },
+                'MinCount': 1,
+                'MaxCount': 1,
                 'TagSpecifications': [
                     {
                         'ResourceType': 'instance',
@@ -314,39 +306,31 @@ class MusicGenLauncher:
                 ]
             }
             
-            # Submit spot instance request
-            logger.info(f"Submitting spot request with max price: ${config.aws.max_spot_price:.3f}/hour")
-            response = self.ec2_client.request_spot_instances(
-                SpotPrice=str(config.aws.max_spot_price),
-                InstanceCount=1,
-                Type='one-time',
-                LaunchSpecification=spot_request
-            )
+            # Launch on-demand instance
+            on_demand_rate = self.get_on_demand_pricing()
+            logger.info(f"Launching on-demand instance at ${on_demand_rate:.3f}/hour")
+            response = self.ec2_client.run_instances(**launch_params)
             
-            # Log the request details
-            spot_request_id = response['SpotInstanceRequests'][0]['SpotInstanceRequestId']
-            logger.info(f"Spot request submitted: {spot_request_id}")
+            # Get instance details
+            instance = response['Instances'][0]
+            instance_id = instance['InstanceId']
+            logger.info(f"Instance launched: {instance_id}")
             
             # Wait a moment and check initial status
             import time
             time.sleep(2)
             
-            status_response = self.ec2_client.describe_spot_instance_requests(
-                SpotInstanceRequestIds=[spot_request_id]
+            status_response = self.ec2_client.describe_instances(
+                InstanceIds=[instance_id]
             )
             
-            status = status_response['SpotInstanceRequests'][0]['State']
-            logger.info(f"Initial spot request status: {status}")
+            instance_state = status_response['Reservations'][0]['Instances'][0]['State']['Name']
+            logger.info(f"Initial instance status: {instance_state}")
             
-            if status == 'failed':
-                fault = status_response['SpotInstanceRequests'][0].get('Fault', {})
-                logger.error(f"Spot request failed: {fault.get('Message', 'Unknown error')}")
-                return False
-            
-            print(f"\n📋 Spot Request Details:")
-            print(f"   Request ID: {spot_request_id}")
-            print(f"   Status: {status}")
-            print(f"   Max Price: ${config.aws.max_spot_price:.3f}/hour")
+            print(f"\n📋 Instance Details:")
+            print(f"   Instance ID: {instance_id}")
+            print(f"   Status: {instance_state}")
+            print(f"   On-demand Rate: ${on_demand_rate:.3f}/hour")
             print(f"   Instance Type: {config.aws.instance_type}")
             
             return True
@@ -355,21 +339,21 @@ class MusicGenLauncher:
             error_code = e.response['Error']['Code']
             error_msg = e.response['Error']['Message']
             
-            if error_code == 'SpotMaxPriceTooLow':
-                logger.error(f"Spot price too low: {error_msg}")
-                print(f"\n❌ Your max price of ${config.aws.max_spot_price:.3f}/hour is too low.")
-                print("Try increasing the max price in your configuration.")
-            elif error_code == 'InsufficientInstanceCapacity':
+            if error_code == 'InsufficientInstanceCapacity':
                 logger.error(f"Insufficient capacity: {error_msg}")
                 print(f"\n❌ No {config.aws.instance_type} instances available in the current region.")
                 print("Try again later or consider a different instance type.")
+            elif error_code == 'UnauthorizedOperation':
+                logger.error(f"Permission denied: {error_msg}")
+                print(f"\n❌ Insufficient permissions to launch EC2 instances.")
+                print("Check your IAM permissions for ec2:RunInstances.")
             else:
-                logger.error(f"Spot request failed: {error_code} - {error_msg}")
+                logger.error(f"Instance launch failed: {error_code} - {error_msg}")
             
             return False
             
         except Exception as e:
-            logger.error(f"Unexpected error launching spot instance: {e}")
+            logger.error(f"Unexpected error launching instance: {e}")
             return False
     
     def run(self) -> None:
@@ -378,7 +362,8 @@ class MusicGenLauncher:
             logger.info("Starting MusicGen Batch System Launcher")
             logger.info(f"Target region: {config.aws.region}")
             logger.info(f"Instance type: {config.aws.instance_type}")
-            logger.info(f"Max spot price: ${config.aws.max_spot_price:.2f}/hour")
+            on_demand_rate = self.get_on_demand_pricing()
+            logger.info(f"On-demand rate: ${on_demand_rate:.2f}/hour")
             
             # Check AWS permissions
             if not self.check_aws_permissions():
@@ -406,28 +391,28 @@ class MusicGenLauncher:
                     else:
                         print("Please enter 1 or 2")
             
-            # Get and display current spot prices
-            logger.info("Checking current spot prices...")
-            zone_prices = self.get_current_spot_prices()
-            self.display_spot_prices(zone_prices)
+            # Display on-demand pricing
+            logger.info("Checking on-demand pricing...")
+            on_demand_rate = self.get_on_demand_pricing()
+            self.display_on_demand_pricing(on_demand_rate)
             
             # Get user confirmation
             if not self.get_user_confirmation():
                 logger.info("User declined to proceed")
                 sys.exit(0)
             
-            # Launch spot instance
-            logger.info("Launching spot instance...")
-            success = self.launch_spot_instance()
+            # Launch on-demand instance
+            logger.info("Launching on-demand instance...")
+            success = self.launch_instance()
             
             if success:
-                logger.info("✅ Spot instance request submitted successfully!")
-                print("\n🚀 Instance launch initiated!")
+                logger.info("✅ On-demand instance launched successfully!")
+                print("\n🚀 Instance launched successfully!")
                 print("The worker will start automatically once the instance is running.")
                 print("You can monitor progress in the AWS console.")
                 print("\n⚠️  IMPORTANT: Remember to terminate the instance when done!")
             else:
-                logger.error("❌ Failed to launch spot instance")
+                logger.error("❌ Failed to launch instance")
                 sys.exit(1)
             
         except KeyboardInterrupt:

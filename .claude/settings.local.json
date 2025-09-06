@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(aws ec2 describe-images:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

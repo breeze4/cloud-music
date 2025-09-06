@@ -18,12 +18,24 @@ class AWSConfig:
     region: str
     ami_id: str
     iam_role_arn: str
+    iam_role_name: str
     s3_bucket_name: str
     key_pair_name: str
-    max_spot_price: float
     instance_type: str
     security_group_name: str
     worker_tag: str = "musicgen-batch-worker"
+    
+    def get_on_demand_rate(self) -> float:
+        """Get on-demand hourly rate for the instance type"""
+        pricing = {
+            'g4dn.xlarge': 0.526,
+            'g4dn.2xlarge': 0.752,
+            'p3.2xlarge': 3.06,
+            'p3.8xlarge': 12.24,
+            'm5.large': 0.096,
+            'm5.xlarge': 0.192
+        }
+        return pricing.get(self.instance_type, 0.50)
 
 
 class Config:
@@ -43,9 +55,9 @@ class Config:
             region=os.getenv('AWS_REGION', 'us-east-1'),
             ami_id=os.getenv('AMI_ID', ''),
             iam_role_arn=iam_role_arn,
+            iam_role_name=iam_role_name,
             s3_bucket_name=os.getenv('S3_BUCKET_NAME', ''),
             key_pair_name=os.getenv('KEY_PAIR_NAME', ''),
-            max_spot_price=float(os.getenv('MAX_SPOT_PRICE', '0.40')),
             instance_type=os.getenv('INSTANCE_TYPE', 'g4dn.xlarge'),
             security_group_name=os.getenv('SECURITY_GROUP_NAME', 'musicgen-worker-sg')
         )
@@ -65,9 +77,6 @@ class Config:
         
         if not self.aws.key_pair_name:
             errors.append("KEY_PAIR_NAME environment variable is required")
-        
-        if self.aws.max_spot_price <= 0:
-            errors.append("MAX_SPOT_PRICE must be greater than 0")
         
         if errors:
             error_msg = "Configuration validation failed:\n" + "\n".join(f"  - {error}" for error in errors)
@@ -105,7 +114,7 @@ sudo -u ubuntu /root/.local/bin/uv sync
 # Set up environment variables for worker (matching worker.py expectations)
 export AWS_DEFAULT_REGION={self.aws.region}
 export MUSICGEN_S3_BUCKET={self.aws.s3_bucket_name}
-export MUSICGEN_HOURLY_COST={self.aws.max_spot_price}
+export MUSICGEN_HOURLY_COST={self.aws.get_on_demand_rate()}
 
 echo "Environment configured, starting worker..."
 
