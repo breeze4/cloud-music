@@ -226,8 +226,6 @@ class MusicGenWorker:
         Returns:
             Generated audio as numpy array
         """
-        # MusicGen model configuration
-        sample_rate = self.model.config.audio_encoder.sample_rate
         max_length_seconds = 30  # Max length per chunk
         
         if duration_seconds <= max_length_seconds:
@@ -238,9 +236,9 @@ class MusicGenWorker:
                 return_tensors="pt"
             ).to(self.device)
             
-            # Calculate tokens needed
-            tokens_per_second = self.model.config.audio_encoder.sample_rate // self.model.config.audio_encoder.hop_length
-            max_new_tokens = int(duration_seconds * tokens_per_second)
+            # Calculate max_new_tokens for the desired duration
+            # MusicGen typically uses 50 tokens per second
+            max_new_tokens = int(duration_seconds * 50)
             
             with torch.no_grad():
                 audio_values = self.model.generate(**inputs, max_new_tokens=max_new_tokens)
@@ -264,8 +262,8 @@ class MusicGenWorker:
                     return_tensors="pt"
                 ).to(self.device)
                 
-                tokens_per_second = self.model.config.audio_encoder.sample_rate // self.model.config.audio_encoder.hop_length
-                max_new_tokens = int(chunk_duration * tokens_per_second)
+                # Calculate max_new_tokens for this chunk
+                max_new_tokens = int(chunk_duration * 50)
                 
                 with torch.no_grad():
                     chunk_audio = self.model.generate(**inputs, max_new_tokens=max_new_tokens)
@@ -345,8 +343,8 @@ class MusicGenWorker:
             with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_file:
                 temp_filepath = temp_file.name
             
-            # Write audio file
-            sample_rate = self.model.config.audio_encoder.sample_rate
+            # Write audio file - MusicGen uses 32kHz sample rate
+            sample_rate = 32000
             sf.write(temp_filepath, audio_data, sample_rate)
             
             # Upload to S3
@@ -458,8 +456,13 @@ class MusicGenWorker:
             os.unlink(temp_filepath)
             
             if success:
-                # Also upload as latest report
-                self.upload_to_s3(temp_filepath, "cost_report_latest.csv")
+                # Also upload as latest report (create temp file again since original was deleted)
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as temp_file_latest:
+                    temp_file_latest.write(csv_content)
+                    temp_filepath_latest = temp_file_latest.name
+                
+                self.upload_to_s3(temp_filepath_latest, "cost_report_latest.csv")
+                os.unlink(temp_filepath_latest)  # Clean up
                 logger.info(f"✅ Cost report uploaded: {report_key}")
             
             return success
