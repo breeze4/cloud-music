@@ -100,5 +100,6 @@ This project uses uv for dependency management:
 
 ## Environment Considerations
 - **DO NOT** attempt to run AWS console commands or Python scripts from within Claude Code
+- **DO NOT** run git commands (add, commit, push) - the user handles all git operations
 - This code is developed in WSL, but the user runs AWS and application work from Windows in a separate console
 - Claude should focus on code editing, analysis, and planning rather than execution

@@ -56,7 +56,7 @@ class Config:
             ami_id=os.getenv('AMI_ID', ''),
             iam_role_arn=iam_role_arn,
             iam_role_name=iam_role_name,
-            s3_bucket_name=os.getenv('S3_BUCKET_NAME', ''),
+            s3_bucket_name=os.getenv('MUSICGEN_S3_BUCKET', ''),
             key_pair_name=os.getenv('KEY_PAIR_NAME', ''),
             instance_type=os.getenv('INSTANCE_TYPE', 'g4dn.xlarge'),
             security_group_name=os.getenv('SECURITY_GROUP_NAME', 'musicgen-worker-sg')
@@ -73,7 +73,7 @@ class Config:
             errors.append("AWS_ACCOUNT_ID and IAM_ROLE_NAME environment variables are required")
         
         if not self.aws.s3_bucket_name:
-            errors.append("S3_BUCKET_NAME environment variable is required")
+            errors.append("MUSICGEN_S3_BUCKET environment variable is required")
         
         if not self.aws.key_pair_name:
             errors.append("KEY_PAIR_NAME environment variable is required")

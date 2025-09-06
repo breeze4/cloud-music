@@ -23,6 +23,10 @@ from transformers import MusicgenForConditionalGeneration, AutoProcessor
 from botocore.exceptions import ClientError
 import soundfile as sf
 import numpy as np
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 
 # Configure logging - use home directory if /var/log is not writable
@@ -65,14 +69,28 @@ class MusicGenWorker:
     """Main worker class for music generation"""
     
     def __init__(self):
-        # Configuration from environment
+        # Configuration from environment variables (loaded from .env file)
         self.s3_bucket = os.getenv('MUSICGEN_S3_BUCKET')
-        self.aws_region = os.getenv('AWS_DEFAULT_REGION', 'us-east-1')
-        self.hourly_cost_usd = float(os.getenv('MUSICGEN_HOURLY_COST', '0.40'))
+        self.aws_region = os.getenv('AWS_DEFAULT_REGION') or os.getenv('AWS_REGION', 'us-east-1')
+        
+        # For hourly cost, use env var or calculate from instance type
+        hourly_cost = os.getenv('MUSICGEN_HOURLY_COST')
+        if hourly_cost:
+            self.hourly_cost_usd = float(hourly_cost)
+        else:
+            # Default pricing based on common instance types
+            instance_type = os.getenv('INSTANCE_TYPE', 'g4dn.xlarge')
+            pricing = {
+                'g4dn.xlarge': 0.526,
+                'g4dn.2xlarge': 0.752,
+                'm5.large': 0.096,
+                'm5.xlarge': 0.192
+            }
+            self.hourly_cost_usd = pricing.get(instance_type, 0.40)
         
         # Validate configuration
         if not self.s3_bucket:
-            raise ValueError("MUSICGEN_S3_BUCKET environment variable is required")
+            raise ValueError("S3 bucket not configured. Set MUSICGEN_S3_BUCKET in .env file")
         
         # Initialize AWS clients
         self.s3_client = boto3.client('s3', region_name=self.aws_region)
