@@ -36,7 +36,7 @@ The system consists of two primary components: a **Local Control Script** and a 
 * **Pricing Model:** Spot Instance. The launcher.py will set a max price (e.g., $0.40/hr).  
 * **AMI (Amazon Machine Image):** A custom, pre-built AMI must be used.  
   * **Base:** AWS Deep Learning AMI (Ubuntu).  
-  * **Pre-installed Dependencies:** NVIDIA drivers, CUDA, Python 3, Git, and all required Python libraries (torch, transformers, boto3, etc.).  
+  * **Pre-installed Dependencies:** NVIDIA drivers, CUDA, Python 3, Git, uv package manager, and all required Python libraries (torch, transformers, boto3, etc.).  
 * **IAM Role:** The instance must be launched with an IAM role granting it, at minimum, s3:PutObject and s3:HeadObject permissions on the target S3 bucket.
 
 ### **3.3. Job Definition File (prompts.txt)**
@@ -100,7 +100,145 @@ The system consists of two primary components: a **Local Control Script** and a 
   * **Impact:** If two launcher.py scripts are run simultaneously, two instances could be launched.  
   * **Mitigation (v1.1):** The S3 check provides a basic locking mechanism. The second instance will skip already-completed songs. However, two separate and incomplete cost\_report.csv files might be generated. This is a low-risk for a single-user system.
 
-## **5\. Out of Scope for v1.1**
+## **5\. Detailed Execution Flow & Verification**
+
+### **5.1 Launcher Script Execution Flow**
+
+**Step 1: Pre-flight Checks**
+- Load configuration from `.env` file and validate all required settings
+- Initialize AWS clients and test permissions (EC2 describe-instances, spot-price-history, S3 list-buckets)
+- **Verification**: Configuration validation passes without errors
+
+**Step 2: Instance Discovery**
+- Search for existing EC2 instances tagged with `Name=musicgen-batch-worker`
+- Display any found instances with state, type, launch time, and IP addresses
+- **Verification**: Check AWS Console → EC2 → Instances for matching instances
+
+**Step 3: Spot Pricing Analysis**
+- Query current spot prices for configured instance type across all availability zones
+- Compare prices against configured max spot price ($0.40/hour default)
+- Display cost estimates for 1, 4, and 8-hour scenarios
+- **Verification**: Compare displayed prices with EC2 Console → Spot Requests → Pricing History
+
+**Step 4: User Confirmation**
+- Display cost warning showing max hourly rate
+- Warn about manual shutdown requirement
+- Prompt for user confirmation to proceed
+- **Verification**: Review warning message accuracy before confirming
+
+**Step 5: Spot Instance Launch (if confirmed)**
+- Create/verify security group `musicgen-worker-sg` with SSH access from current IP
+- Submit spot instance request with full configuration (AMI, IAM role, key pair, UserData script)
+- Report spot request ID and initial status
+- **Verification**: Check AWS Console → EC2 → Spot Requests for new request
+
+### **5.2 Worker Script Execution Flow (Automated on EC2)**
+
+**Phase 1: Environment Bootstrap**
+- UserData script installs system packages (git, curl, python3-pip)
+- Install uv package manager from astral.sh
+- Clone project repository to `/home/ubuntu/musicgen-batch`
+- Install Python dependencies via `uv sync`
+- **Verification**: SSH to instance and check `/var/log/cloud-init-output.log`
+
+**Phase 2: Model Initialization**
+- Check for CUDA/GPU availability (expect Tesla T4 on g4dn.xlarge)
+- Download MusicGen model from Hugging Face (`facebook/musicgen-medium`, ~6GB)
+- Load model into GPU memory for inference
+- **Verification**: Check worker logs for GPU detection and model loading success
+
+**Phase 3: Job Processing**
+- Parse `prompts.txt` from repository root (format: `PROMPT ; DURATION ; FILENAME`)
+- Skip comment lines (starting with #) and validate duration values
+- **Verification**: Worker logs should show "Found X valid prompts to process"
+
+**Phase 4: Generation Loop**
+For each prompt:
+- Generate deterministic filename using hash for idempotency
+- Check S3 bucket for existing file (skip if already exists)
+- Generate audio using MusicGen with chunking for long durations (>30s)
+- Time the generation process for cost calculation
+- Save as temporary .wav file locally
+- **Verification**: Monitor GPU utilization with `nvidia-smi` during generation
+
+**Phase 5: S3 Upload & Cleanup**
+- Upload .wav file to S3 bucket using deterministic naming
+- Calculate generation cost: `(time_seconds / 3600) * hourly_rate`
+- Delete local temporary file after successful upload
+- **Verification**: Check S3 bucket for appearance of new .wav files
+
+**Phase 6: Cost Reporting**
+- Generate `cost_report.csv` with columns: s3_filename, prompt, requested_duration_s, generation_time_s, estimated_cost_usd
+- Include only successful generations in final report
+- Upload CSV to S3 bucket
+- **Verification**: Download and review cost_report.csv content
+
+**Phase 7: Completion**
+- Worker script exits (EC2 instance remains running)
+- **Manual Action Required**: User must terminate instance via AWS Console
+
+### **5.3 Verification Commands & Checkpoints**
+
+**Pre-Launch Verification:**
+```bash
+# Test configuration and AWS connectivity
+uv run python -c "from config import config; print(f'Bucket: {config.aws.s3_bucket_name}')"
+uv run python check_aws_readiness.py
+
+# Dry-run launcher (will show pricing but not launch if you say 'no')
+uv run python launcher.py
+```
+
+**During Execution Monitoring:**
+```bash
+# Check spot request status
+aws ec2 describe-spot-instance-requests --region us-west-2
+
+# Monitor instance state
+aws ec2 describe-instances --filters "Name=tag:Name,Values=musicgen-batch-worker" --region us-west-2
+
+# SSH to instance for debugging
+ssh -i your-key.pem ubuntu@[INSTANCE_IP]
+
+# Check bootstrap logs on instance
+sudo cat /var/log/cloud-init-output.log
+
+# Monitor worker progress
+tail -f /var/log/musicgen-worker.log
+
+# Check GPU utilization during generation
+nvidia-smi
+```
+
+**Post-Execution Verification:**
+```bash
+# List generated files in S3
+aws s3 ls s3://your-bucket-name/
+
+# Download cost report
+aws s3 cp s3://your-bucket-name/cost_report.csv ./cost_report.csv
+
+# Verify instance termination
+aws ec2 describe-instances --instance-ids i-xxxxxxxxx --region us-west-2
+```
+
+### **5.4 Expected Timeline & Costs**
+
+**Typical execution for 4 prompts (30-90 seconds each):**
+- Bootstrap phase: 5-10 minutes (includes 6GB model download on first run)
+- Generation phase: 2-5 minutes per prompt depending on duration and complexity
+- Total runtime: 15-30 minutes
+- Estimated cost: $0.10-$0.20 (at $0.40/hour max spot price)
+
+**Success criteria:**
+- All AWS permission checks pass
+- Spot instance launches successfully
+- Worker detects GPU and loads model
+- Each prompt generates audio file in S3
+- Cost report uploaded with accurate calculations
+- Manual instance termination completes cleanup
+
+## **6\. Out of Scope for v1.1**
 
 * Automated shutdown of the EC2 instance upon script completion.  
 * A web UI or API for submitting jobs.  

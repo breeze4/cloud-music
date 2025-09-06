@@ -113,6 +113,16 @@ class AWSReadinessChecker:
             ('IAM List Roles', lambda: self.iam.list_roles(MaxItems=1)),
         ]
         
+        # Test budgets permission separately since it's not critical
+        try:
+            budgets_client = self.session.client('budgets')
+            budgets_client.describe_budgets(AccountId=self.config['AWS_ACCOUNT_ID'], MaxResults=1)
+            self.print_status(True, "Budgets permission (for billing alerts check)")
+        except ClientError as e:
+            self.print_status(False, f"Budgets permission: {e.response['Error']['Code']} (non-critical)")
+        except Exception:
+            self.print_status(False, "Budgets permission: Unknown error (non-critical)")
+        
         all_passed = True
         for name, test_func in permissions_tests:
             try:
@@ -138,9 +148,9 @@ class AWSReadinessChecker:
                 MaxResults=5
             )
             
-            if response['SpotPrices']:
-                latest_price = response['SpotPrices'][0]['SpotPrice']
-                az = response['SpotPrices'][0]['AvailabilityZone']
+            if response['SpotPriceHistory']:
+                latest_price = response['SpotPriceHistory'][0]['SpotPrice']
+                az = response['SpotPriceHistory'][0]['AvailabilityZone']
                 self.print_status(True, f"{instance_type} available in {az} at ${latest_price}/hour")
                 
                 # Check if our max price is reasonable
@@ -389,20 +399,56 @@ class AWSReadinessChecker:
         print("7. Move it to: ./keys/musicgen-batch-keypair.pem")
 
     def setup_billing_alerts(self):
-        """Provide instructions for setting up billing alerts"""
+        """Check for existing billing alerts/budgets"""
         self.print_step(7, "Billing Alert Setup")
         
-        print("Setting up billing alerts is highly recommended to monitor costs.")
-        print("To set up billing alerts:")
-        print("1. Go to AWS Console -> Billing Dashboard")
-        print("2. Click 'Budgets' in left sidebar")
-        print("3. Click 'Create budget'")
-        print("4. Choose 'Cost budget'")
-        print("5. Set a reasonable monthly limit (e.g., $50)")
-        print("6. Configure email notifications")
-        print()
-        response = input("Have you set up billing alerts? (y/N): ").strip().lower()
-        return response in ['y', 'yes']
+        try:
+            # Initialize budgets client
+            budgets_client = self.session.client('budgets')
+            
+            # Check for existing budgets
+            response = budgets_client.describe_budgets(
+                AccountId=self.config['AWS_ACCOUNT_ID'],
+                MaxResults=10
+            )
+            
+            budgets = response.get('Budgets', [])
+            
+            if budgets:
+                self.print_status(True, f"Found {len(budgets)} existing budget(s)")
+                for budget in budgets:
+                    budget_name = budget['BudgetName']
+                    budget_limit = budget['BudgetLimit']['Amount']
+                    budget_unit = budget['BudgetLimit']['Unit']
+                    print(f"  - {budget_name}: {budget_limit} {budget_unit}")
+                return True
+            else:
+                self.print_status(False, "No billing budgets found")
+                print("Setting up billing alerts is highly recommended to monitor costs.")
+                print("To set up billing alerts:")
+                print("1. Go to AWS Console -> Billing Dashboard")
+                print("2. Click 'Budgets' in left sidebar")
+                print("3. Click 'Create budget'")
+                print("4. Choose 'Cost budget'")
+                print("5. Set a reasonable monthly limit (e.g., $50)")
+                print("6. Configure email notifications")
+                print()
+                print("⚠️  Consider setting up a budget to avoid unexpected charges.")
+                return False
+                
+        except ClientError as e:
+            # If budgets API is not accessible, fall back to instructions
+            if e.response['Error']['Code'] in ['AccessDenied', 'UnauthorizedOperation']:
+                self.print_status(False, "Cannot check budgets (insufficient permissions)")
+                print("Setting up billing alerts is highly recommended to monitor costs.")
+                print("Please set up billing budgets manually in the AWS Console.")
+                return False
+            else:
+                self.print_status(False, f"Error checking budgets: {e}")
+                return False
+        except Exception as e:
+            self.print_status(False, f"Error checking budgets: {e}")
+            return False
 
     def update_env_value(self, key, value):
         """Update a value in the .env file"""

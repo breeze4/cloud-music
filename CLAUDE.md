@@ -86,10 +86,17 @@ Manual testing is preferred for this system:
 4. Test idempotency by running worker.py multiple times with same prompts
 
 ## Development Commands
-Since this is a Python-based AWS project, typical commands would include:
-- `python launcher.py` - Start the batch generation process
-- `python worker.py` - Run worker script (typically executed on EC2)
+This is a Python project managed with uv. Typical commands include:
+- `uv sync` - Install/sync dependencies 
+- `uv run python launcher.py` - Start the batch generation process
+- `uv run python worker.py` - Run worker script (typically executed on EC2)
 - AWS CLI commands for managing S3 buckets and EC2 instances
+
+## Project Structure
+This project uses uv for dependency management:
+- `pyproject.toml` - Project configuration and dependencies
+- `uv.lock` - Locked dependency versions
+- `.venv/` - Virtual environment (created by uv)
 
 ## Environment Considerations
 - **DO NOT** attempt to run AWS console commands or Python scripts from within Claude Code
