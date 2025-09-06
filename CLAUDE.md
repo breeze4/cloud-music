@@ -90,3 +90,8 @@ Since this is a Python-based AWS project, typical commands would include:
 - `python launcher.py` - Start the batch generation process
 - `python worker.py` - Run worker script (typically executed on EC2)
 - AWS CLI commands for managing S3 buckets and EC2 instances
+
+## Environment Considerations
+- **DO NOT** attempt to run AWS console commands or Python scripts from within Claude Code
+- This code is developed in WSL, but the user runs AWS and application work from Windows in a separate console
+- Claude should focus on code editing, analysis, and planning rather than execution

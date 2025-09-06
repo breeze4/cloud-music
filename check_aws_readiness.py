@@ -243,7 +243,6 @@ class AWSReadinessChecker:
                     "Effect": "Allow",
                     "Action": [
                         "s3:PutObject",
-                        "s3:HeadObject",
                         "s3:GetObject"
                     ],
                     "Resource": f"arn:aws:s3:::{bucket_name}/*"
@@ -366,20 +365,7 @@ class AWSReadinessChecker:
         local_key_exists = False
         key_path = Path(key_pair_path)
         if key_path.exists():
-            # Check file permissions (should be 600 for security)
-            import stat
-            file_stat = key_path.stat()
-            file_mode = stat.filemode(file_stat.st_mode)
-            
             self.print_status(True, f"Private key file exists: {key_pair_path}")
-            
-            # Check if permissions are secure
-            if file_stat.st_mode & 0o077:  # Check if group/other have any permissions
-                print(f"⚠️  Warning: Private key has insecure permissions: {file_mode}")
-                print(f"   Run: chmod 600 {key_pair_path}")
-            else:
-                print(f"✅ Private key permissions are secure: {file_mode}")
-            
             local_key_exists = True
         else:
             self.print_status(False, f"Private key file not found: {key_pair_path}")
@@ -401,7 +387,6 @@ class AWSReadinessChecker:
         print("5. Format: .pem")
         print("6. Download the .pem file")
         print("7. Move it to: ./keys/musicgen-batch-keypair.pem")
-        print("8. Set secure permissions: chmod 600 ./keys/musicgen-batch-keypair.pem")
 
     def setup_billing_alerts(self):
         """Provide instructions for setting up billing alerts"""
