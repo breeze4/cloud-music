@@ -285,6 +285,16 @@ class MusicGenLauncher:
                 },
                 'MinCount': 1,
                 'MaxCount': 1,
+                'BlockDeviceMappings': [
+                    {
+                        'DeviceName': '/dev/sda1',
+                        'Ebs': {
+                            'VolumeSize': 80,
+                            'VolumeType': 'gp3',
+                            'DeleteOnTermination': True
+                        }
+                    }
+                ],
                 'TagSpecifications': [
                     {
                         'ResourceType': 'instance',

@@ -25,8 +25,17 @@ import soundfile as sf
 import numpy as np
 
 
-# Configure logging
+# Configure logging - use home directory if /var/log is not writable
+import os
 log_file = '/var/log/musicgen-worker.log'
+try:
+    # Test if we can write to /var/log
+    with open(log_file, 'a'):
+        pass
+except PermissionError:
+    # Fall back to user's home directory
+    log_file = os.path.expanduser('~/musicgen-worker.log')
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -36,7 +45,7 @@ logging.basicConfig(
     ]
 )
 print(f"Worker logs will be written to: {log_file}")
-print("Monitor logs with: tail -f /var/log/musicgen-worker.log")
+print(f"Monitor logs with: tail -f {log_file}")
 logger = logging.getLogger(__name__)
 
 

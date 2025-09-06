@@ -24,7 +24,7 @@ uv run python check_aws_readiness.py
 uv run python launcher.py
 
 # Monitor progress in real-time ⭐
-uv run python monitor_worker.py tail
+uv run python monitor_worker.py system
 
 # Check outputs
 uv run python monitor_worker.py s3
@@ -51,7 +51,7 @@ uv run python monitor_worker.py s3
 ```
 ├── launcher.py          # Launch on-demand instances
 ├── worker.py           # Generate music on EC2
-├── monitor_worker.py   # Easy log monitoring
+├── monitor_worker.py   # Log monitoring with sub-commands
 ├── prompts.txt         # Your music prompts
 ├── config.py          # AWS configuration
 ├── .env               # Your AWS credentials
@@ -77,12 +77,41 @@ Format: `PROMPT_TEXT ; DURATION_IN_SECONDS ; FILENAME`
 
 Once your worker is running:
 
+### Basic Monitoring
 ```bash
-uv run python monitor_worker.py status    # Instance status
-uv run python monitor_worker.py tail      # Live logs ⭐
-uv run python monitor_worker.py s3        # Check outputs
-uv run python monitor_worker.py ssh       # SSH access
+uv run python monitor_worker.py status      # Instance status
+uv run python monitor_worker.py logs        # Recent worker logs
+uv run python monitor_worker.py tail        # Live worker logs ⭐
+uv run python monitor_worker.py s3          # Check outputs
+uv run python monitor_worker.py ssh         # SSH access
 ```
+
+### Monitoring Different Phases
+
+**🚀 For System Setup/Bootstrap:**
+```bash
+uv run python monitor_worker.py bootstrap   # Bootstrap completion status
+uv run python monitor_worker.py system      # Live system logs (uv sync, model download)
+```
+
+**🎵 For Music Generation:**
+```bash
+uv run python monitor_worker.py tail        # Live worker logs (generation progress)
+```
+
+### Monitoring Guide
+
+**During Launch Phase:** 
+- `monitor_worker.py system` - Shows uv setup, git clone, model download
+- `monitor_worker.py bootstrap` - Check if bootstrap completed successfully
+
+**During Generation Phase:**
+- `monitor_worker.py tail` - Shows music generation progress, timings, costs
+- `monitor_worker.py s3` - Check generated files in S3 bucket
+
+**For Troubleshooting:**
+- `monitor_worker.py bootstrap` - Debug startup/setup issues
+- `monitor_worker.py logs` - Recent worker logs without live follow
 
 ## ⚡ Quick Test Run
 
@@ -97,7 +126,7 @@ uv run python monitor_worker.py ssh       # SSH access
    # Edit prompts.txt to have only 1-2 short prompts (30-60s)
    uv run python launcher.py
    # Type 'yes' to launch, then monitor with:
-   uv run python monitor_worker.py tail
+   uv run python monitor_worker.py system  # Shows bootstrap → worker transition
    ```
 
 3. **Remember to terminate** instance when complete!
@@ -152,8 +181,10 @@ uv run python check_aws_readiness.py  # Verify permissions
 
 **Worker crashes:**
 ```bash
-uv run python monitor_worker.py logs  # Check error messages
-uv run python monitor_worker.py ssh   # SSH for debugging
+uv run python monitor_worker.py logs       # Check recent error messages
+uv run python monitor_worker.py bootstrap  # Check startup/setup issues
+uv run python monitor_worker.py system     # Follow live system logs
+uv run python monitor_worker.py ssh        # SSH for debugging
 ```
 
 **No outputs:**
@@ -180,8 +211,8 @@ uv run python launcher.py  # type 'no' to exit
 # Edit prompts.txt to have 1-2 short samples first
 uv run python launcher.py  # type 'yes' to launch
 
-# 4. Monitor progress
-uv run python monitor_worker.py tail
+# 4. Monitor progress (system setup → worker)
+uv run python monitor_worker.py system
 
 # 5. Check results  
 uv run python monitor_worker.py s3

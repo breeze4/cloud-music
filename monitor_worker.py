@@ -68,8 +68,10 @@ def main():
         print("MusicGen Worker Monitor")
         print("Usage:")
         print("  python monitor_worker.py status    - Show instance status") 
-        print("  python monitor_worker.py logs      - Show recent logs")
-        print("  python monitor_worker.py tail      - Follow logs in real-time")
+        print("  python monitor_worker.py logs      - Show recent worker logs")
+        print("  python monitor_worker.py tail      - Follow worker logs in real-time")
+        print("  python monitor_worker.py bootstrap - Show bootstrap/system logs") 
+        print("  python monitor_worker.py system    - Follow all system logs")
         print("  python monitor_worker.py ssh       - SSH to worker instance")
         print("  python monitor_worker.py s3        - Show S3 outputs")
         return
@@ -99,20 +101,37 @@ def main():
             print(f"  SSH: ssh -i keys/{config.aws.key_pair_name}.pem ubuntu@{instance['ip']}")
             print(f"  Logs: python monitor_worker.py logs")
             print(f"  Real-time: python monitor_worker.py tail")
+            print(f"  Bootstrap: python monitor_worker.py bootstrap")
+            print(f"  System: python monitor_worker.py system")
     
     elif command == 'logs':
         if instance['state'] != 'running':
             print("❌ Instance not running")
             return
         print("📜 Recent worker logs:")
-        ssh_to_instance(instance['ip'], 'tail -50 /var/log/musicgen-worker.log')
+        ssh_to_instance(instance['ip'], 'tail -50 /var/log/musicgen-worker.log 2>/dev/null || tail -50 ~/musicgen-worker.log 2>/dev/null || echo "No worker logs found yet"')
     
     elif command == 'tail':
         if instance['state'] != 'running':
             print("❌ Instance not running") 
             return
         print("📜 Following worker logs (Ctrl+C to stop):")
-        ssh_to_instance(instance['ip'], 'tail -f /var/log/musicgen-worker.log')
+        ssh_to_instance(instance['ip'], 'tail -f /var/log/musicgen-worker.log 2>/dev/null || tail -f ~/musicgen-worker.log 2>/dev/null || echo "No worker logs found yet"')
+    
+    elif command == 'bootstrap':
+        if instance['state'] != 'running':
+            print("❌ Instance not running")
+            return
+        print("🔧 Bootstrap/UserData logs:")
+        ssh_to_instance(instance['ip'], 'echo "=== Cloud-init output ===" && sudo cat /var/log/cloud-init-output.log 2>/dev/null | tail -100 || echo "No cloud-init-output.log found"; echo -e "\n=== Cloud-init log ===" && sudo cat /var/log/cloud-init.log 2>/dev/null | tail -50 || echo "No cloud-init.log found"')
+    
+    elif command == 'system':
+        if instance['state'] != 'running':
+            print("❌ Instance not running") 
+            return
+        print("📜 Following system logs (Ctrl+C to stop):")
+        print("This will show cloud-init progress, uv setup, worker startup...")
+        ssh_to_instance(instance['ip'], 'sudo tail -f /var/log/cloud-init-output.log 2>/dev/null || echo "Switching to worker logs..."; tail -f /var/log/musicgen-worker.log 2>/dev/null || tail -f ~/musicgen-worker.log 2>/dev/null || echo "No logs found yet"')
     
     elif command == 'ssh':
         if instance['state'] != 'running':

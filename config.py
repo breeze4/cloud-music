@@ -86,17 +86,13 @@ class Config:
         """Generate the UserData script for EC2 bootstrap"""
         return f"""#!/bin/bash
 set -e
-exec > >(tee /var/log/user-data.log) 2>&1
+exec > >(tee -a /var/log/user-data.log) 2>&1
 
-echo "Starting MusicGen worker bootstrap..."
+echo "$(date): Starting MusicGen worker bootstrap..."
 
 # Update system and install required packages
 apt-get update -y
 apt-get install -y git python3-pip curl
-
-# Install uv package manager
-curl -LsSf https://astral.sh/uv/install.sh | sh
-export PATH="/root/.local/bin:$PATH"
 
 # Set up working directory
 cd /home/ubuntu
@@ -108,27 +104,39 @@ sudo -u ubuntu git clone https://github.com/breeze4/cloud-music.git musicgen-bat
 cd musicgen-batch
 sudo -u ubuntu git pull origin main || echo "Pull failed or not needed"
 
-# Install Python dependencies
-sudo -u ubuntu /root/.local/bin/uv sync
+# Install uv package manager for ubuntu user
+sudo -u ubuntu bash << 'EOF'
+cd /home/ubuntu/musicgen-batch
+curl -LsSf https://astral.sh/uv/install.sh | sh
+export PATH="/home/ubuntu/.local/bin:$PATH"
+/home/ubuntu/.local/bin/uv sync
+EOF
 
 # Set up environment variables for worker (matching worker.py expectations)
 export AWS_DEFAULT_REGION={self.aws.region}
 export MUSICGEN_S3_BUCKET={self.aws.s3_bucket_name}
 export MUSICGEN_HOURLY_COST={self.aws.get_on_demand_rate()}
 
-echo "Environment configured, starting worker..."
+echo "$(date): Environment configured, starting worker..."
 
 # Set up log file with proper permissions
 touch /var/log/musicgen-worker.log
 chown ubuntu:ubuntu /var/log/musicgen-worker.log
 chmod 644 /var/log/musicgen-worker.log
 
-echo "Starting worker script - monitor with: tail -f /var/log/musicgen-worker.log"
+echo "$(date): Starting worker script - monitor with: tail -f /var/log/musicgen-worker.log"
 
 # Run the worker script as ubuntu user
-sudo -u ubuntu -E /root/.local/bin/uv run python worker.py
+sudo -u ubuntu -E bash << 'EOF'
+cd /home/ubuntu/musicgen-batch
+export PATH="/home/ubuntu/.local/bin:$PATH"
+export AWS_DEFAULT_REGION={self.aws.region}
+export MUSICGEN_S3_BUCKET={self.aws.s3_bucket_name}
+export MUSICGEN_HOURLY_COST={self.aws.get_on_demand_rate()}
+/home/ubuntu/.local/bin/uv run python worker.py
+EOF
 
-echo "Worker script completed."
+echo "$(date): Worker script completed."
 echo "View final logs: cat /var/log/musicgen-worker.log"
 """
 

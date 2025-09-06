@@ -33,10 +33,11 @@ The system consists of two primary components: a **Local Control Script** and a 
 ### **3.2. Cloud Worker Instance (AWS EC2)**
 
 * **Instance Type:** g4dn.xlarge (NVIDIA T4 GPU) or equivalent.  
-* **Pricing Model:** Spot Instance. The launcher.py will set a max price (e.g., $0.40/hr).  
+* **Pricing Model:** On-demand Instance for predictable availability and pricing.  
 * **AMI (Amazon Machine Image):** A custom, pre-built AMI must be used.  
   * **Base:** AWS Deep Learning AMI (Ubuntu).  
   * **Pre-installed Dependencies:** NVIDIA drivers, CUDA, Python 3, Git, uv package manager, and all required Python libraries (torch, transformers, boto3, etc.).  
+  * **Storage Requirements:** 80GB EBS volume to accommodate AMI requirements (~22GB), CUDA/PyTorch libraries (~13GB), MusicGen model (~8GB), and temporary audio files with comfortable headroom
 * **IAM Role:** The instance must be launched with an IAM role granting it, at minimum, s3:PutObject and s3:HeadObject permissions on the target S3 bucket.
 
 ### **3.3. Job Definition File (prompts.txt)**
@@ -86,10 +87,10 @@ The system consists of two primary components: a **Local Control Script** and a 
 
 * **Risk: Cost Calculation is an Estimate.**  
   * **Impact:** The reported cost may not match the final AWS bill exactly.  
-  * **Mitigation (v1.1):** The cost is based on the *max spot price* set by the user, not the actual (and often lower) spot price charged by AWS. This should be clearly documented. The estimate serves as an upper bound for the cost of each job.  
-* **Risk: Spot Instance Interruption.**  
-  * **Impact:** If the instance is terminated mid-generation, progress is lost. The cost report for that batch will not be generated.  
-  * **Mitigation (v1.1):** The idempotency check ensures that on the next run, completed songs are skipped. The cost report will be generated at the end of the *successful* run.  
+  * **Mitigation (v1.1):** The cost is based on the *on-demand hourly rate* for the instance type. This should be clearly documented. The estimate serves as an upper bound for the cost of each job.  
+* **Risk: Manual Instance Termination Required.**  
+  * **Impact:** If the user forgets to terminate the instance, costs will continue to accrue.  
+  * **Mitigation (v1.1):** Clear warnings are displayed during launch. The idempotency check ensures that restarts only process remaining work.  
 * **Risk: Instance Is Not Shut Down.**  
   * **Impact:** Significant cost overrun.  
   * **Mitigation (v1.1):** This remains a manual process. The user is responsible for stopping the EC2 instance. This is the biggest operational risk.  
