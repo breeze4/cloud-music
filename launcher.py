@@ -134,30 +134,40 @@ class MusicGenLauncher:
             Dictionary mapping availability zone to current spot price
         """
         try:
+            logger.info(f"Querying spot price history for {config.aws.instance_type} in {config.aws.region}")
             response = self.ec2_client.describe_spot_price_history(
                 InstanceTypes=[config.aws.instance_type],
                 ProductDescriptions=['Linux/UNIX'],
-                MaxResults=20,  # Get recent prices across AZs
-                StartTime=None,  # Get most recent prices
+                MaxResults=20  # Get recent prices across AZs - removed StartTime=None
             )
+            logger.info(f"Received {len(response.get('SpotPriceHistory', []))} spot price records")
             
             # Group by availability zone and get the most recent price for each
             zone_prices = {}
             for price_info in response['SpotPriceHistory']:
                 zone = price_info['AvailabilityZone']
                 price = float(price_info['SpotPrice'])
+                timestamp = price_info['Timestamp']
+                
+                logger.debug(f"Spot price record: {zone} = ${price:.3f} at {timestamp}")
                 
                 # Keep the most recent (first in results) price for each zone
                 if zone not in zone_prices:
                     zone_prices[zone] = price
             
+            logger.info(f"Final zone prices: {zone_prices}")
             return zone_prices
             
         except ClientError as e:
-            logger.error(f"Failed to get spot prices: {e}")
+            logger.error(f"AWS ClientError getting spot prices: {e}")
+            logger.error(f"Error code: {e.response.get('Error', {}).get('Code', 'Unknown')}")
+            logger.error(f"Error message: {e.response.get('Error', {}).get('Message', 'Unknown')}")
             return {}
         except Exception as e:
             logger.error(f"Unexpected error getting spot prices: {e}")
+            logger.error(f"Exception type: {type(e)}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return {}
     
     def display_spot_prices(self, zone_prices: Dict[str, float]) -> None:

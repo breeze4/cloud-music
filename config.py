@@ -6,6 +6,10 @@ This file contains AWS resource identifiers and system settings.
 import os
 from dataclasses import dataclass
 from typing import Optional
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 
 @dataclass
@@ -91,7 +95,7 @@ chown ubuntu:ubuntu /home/ubuntu
 
 # Clone repository (update this URL to your actual repository)
 # TODO: Replace with your actual git repository URL
-sudo -u ubuntu git clone https://github.com/your-username/cloud-music.git musicgen-batch || echo "Repository already exists"
+sudo -u ubuntu git clone https://github.com/breeze4/cloud-music.git musicgen-batch || echo "Repository already exists"
 cd musicgen-batch
 sudo -u ubuntu git pull origin main || echo "Pull failed or not needed"
 
