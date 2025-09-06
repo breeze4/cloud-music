@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 AWS Setup Script for MusicGen Batch System
-Handles Phase 1 tasks: AWS CLI installation, authentication, and account readiness
+Handles Phase 1 tasks: uv setup, AWS CLI installation, authentication, and account readiness
 """
 
 import os
@@ -35,9 +35,110 @@ def run_command(command, check=True):
         return e.stdout.strip(), e.stderr.strip(), e.returncode
 
 
+def check_uv_installed():
+    """Check if uv is installed"""
+    print_step(1, "Checking uv Installation")
+    
+    stdout, stderr, returncode = run_command("uv --version", check=False)
+    
+    if returncode == 0:
+        print(f"✅ uv is installed: {stdout}")
+        return True
+    else:
+        print("❌ uv is not installed")
+        return False
+
+
+def install_uv():
+    """Install uv package manager"""
+    print_step(2, "Installing uv")
+    
+    system = platform.system().lower()
+    
+    print("Installing uv package manager...")
+    
+    if system in ["linux", "darwin"]:  # Linux or macOS
+        cmd = "curl -LsSf https://astral.sh/uv/install.sh | sh"
+        print(f"Running: {cmd}")
+        result = subprocess.run(cmd, shell=True, check=False)
+        
+        if result.returncode == 0:
+            # Add to PATH for current session
+            uv_bin = Path.home() / ".cargo" / "bin"
+            if uv_bin.exists():
+                current_path = os.environ.get("PATH", "")
+                if str(uv_bin) not in current_path:
+                    os.environ["PATH"] = f"{uv_bin}:{current_path}"
+            
+            # Test installation
+            stdout, stderr, returncode = run_command("uv --version", check=False)
+            if returncode == 0:
+                print(f"✅ uv successfully installed: {stdout}")
+                return True
+            else:
+                print("❌ uv installation verification failed")
+                print("You may need to restart your shell or run: source ~/.bashrc")
+                return False
+        else:
+            print("❌ uv installation failed")
+            return False
+    
+    elif system == "windows":
+        print("For Windows, please install uv using one of these methods:")
+        print("1. PowerShell: irm https://astral.sh/uv/install.ps1 | iex")
+        print("2. Scoop: scoop install uv")
+        print("3. Chocolatey: choco install uv")
+        print("Then restart this script.")
+        return False
+    
+    else:
+        print(f"❌ Unsupported operating system: {system}")
+        return False
+
+
+def setup_uv_project():
+    """Initialize uv project and install dependencies"""
+    print_step(3, "Setting up uv Project")
+    
+    # Check if we're already in a uv project
+    if Path("pyproject.toml").exists():
+        print("✅ pyproject.toml already exists")
+    
+    # Use uv sync for simpler dependency management
+    print("Installing project dependencies with uv...")
+    stdout, stderr, returncode = run_command("uv sync", check=False)
+    
+    if returncode == 0:
+        print("✅ Dependencies installed successfully")
+        print("✅ Virtual environment created at .venv")
+        return True
+    else:
+        print(f"❌ Failed to install dependencies")
+        print(f"stdout: {stdout}")
+        print(f"stderr: {stderr}")
+        
+        # Fallback: try manual installation
+        print("Trying fallback method...")
+        fallback_commands = [
+            "uv venv",
+            "uv pip install boto3 python-dotenv"
+        ]
+        
+        for cmd in fallback_commands:
+            print(f"Running fallback: {cmd}")
+            stdout, stderr, returncode = run_command(cmd, check=False)
+            if returncode != 0:
+                print(f"❌ Fallback failed: {cmd}")
+                print(f"Error: {stderr}")
+                return False
+        
+        print("✅ Fallback installation successful")
+        return True
+
+
 def check_aws_cli_installed():
     """Check if AWS CLI is installed"""
-    print_step(1, "Checking AWS CLI Installation")
+    print_step(4, "Checking AWS CLI Installation")
     
     stdout, stderr, returncode = run_command("aws --version", check=False)
     
@@ -51,7 +152,7 @@ def check_aws_cli_installed():
 
 def install_aws_cli():
     """Install AWS CLI based on the operating system"""
-    print_step(2, "Installing AWS CLI")
+    print_step(5, "Installing AWS CLI")
     
     system = platform.system().lower()
     
@@ -114,7 +215,7 @@ def install_aws_cli():
 
 def setup_env_file():
     """Guide user through setting up .env file"""
-    print_step(3, "Setting up Environment Configuration")
+    print_step(6, "Setting up Environment Configuration")
     
     env_path = Path(".env")
     template_path = Path(".env.template")
@@ -194,7 +295,7 @@ def setup_env_file():
 
 def configure_aws_credentials():
     """Guide user through AWS credential configuration"""
-    print_step(4, "Configuring AWS Credentials")
+    print_step(7, "Configuring AWS Credentials")
     
     print("You need AWS credentials to authenticate with AWS services.")
     print("There are several ways to do this:")
@@ -325,8 +426,25 @@ def configure_aws_sso():
 def main():
     """Main setup function"""
     print_header("MusicGen Batch System - AWS Setup")
-    print("This script will help you set up AWS CLI and authentication for the MusicGen batch system.")
+    print("This script will help you set up uv, AWS CLI and authentication for the MusicGen batch system.")
     print()
+    
+    # Check if uv is installed
+    if not check_uv_installed():
+        print("uv package manager is required. Would you like to install it?")
+        response = input("Install uv? (Y/n): ").strip().lower()
+        if response in ['', 'y', 'yes']:
+            if not install_uv():
+                print("❌ Failed to install uv. Please install manually and run this script again.")
+                return False
+        else:
+            print("uv is required for dependency management. Please install it manually and run this script again.")
+            return False
+    
+    # Set up uv project
+    if not setup_uv_project():
+        print("❌ Failed to set up uv project")
+        return False
     
     # Check if AWS CLI is installed
     if not check_aws_cli_installed():
@@ -351,14 +469,22 @@ def main():
         return False
     
     print_header("Setup Complete!")
+    print("✅ uv package manager is installed and configured")
+    print("✅ Project dependencies are installed")
     print("✅ AWS CLI is installed and configured")
     print("✅ Environment file (.env) is set up")
     print("✅ AWS credentials are configured")
     print()
     print("Next steps:")
-    print("1. Run: python check_aws_readiness.py")
+    print("1. Run: uv run python check_aws_readiness.py")
     print("2. Create your EC2 key pair in AWS Console if you haven't already")
     print("3. Review and update .env file as needed")
+    print()
+    print("Development commands:")
+    print("• uv run python setup_aws.py        # Re-run this setup")
+    print("• uv run python check_aws_readiness.py  # Check AWS account readiness")
+    print("• uv add <package>                  # Add new dependencies")
+    print("• uv sync                           # Sync dependencies")
     
     return True
 

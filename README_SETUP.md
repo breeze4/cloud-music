@@ -1,6 +1,6 @@
 # MusicGen Batch System - Setup Guide
 
-This guide walks you through setting up AWS infrastructure and authentication for the MusicGen batch generation system.
+This guide walks you through setting up the development environment, AWS infrastructure and authentication for the MusicGen batch generation system.
 
 ## Quick Start
 
@@ -8,22 +8,25 @@ This guide walks you through setting up AWS infrastructure and authentication fo
    ```bash
    python setup_aws.py
    ```
+   This will install uv, set up the project, install dependencies, configure AWS CLI, and create your .env file.
 
 2. **Check AWS readiness:**
    ```bash
-   python check_aws_readiness.py
+   uv run python check_aws_readiness.py
    ```
 
-3. **Install Python dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
+## Prerequisites
+
+- Python 3.8+ (uv will manage the virtual environment)
+- Internet connection for downloading dependencies and AWS API calls
 
 ## Detailed Setup Process
 
 ### Step 1: Initial Setup
 
 The `setup_aws.py` script will:
+- ✅ Install uv package manager if needed (Linux/macOS)
+- ✅ Set up Python virtual environment and install dependencies
 - ✅ Install AWS CLI if needed (Linux/macOS)
 - ✅ Guide you through AWS credential setup
 - ✅ Create and configure your `.env` file
@@ -46,7 +49,7 @@ The `check_aws_readiness.py` script will:
 
 **Run:**
 ```bash
-python check_aws_readiness.py
+uv run python check_aws_readiness.py
 ```
 
 ### Step 3: Manual Tasks (After Scripts)
@@ -103,9 +106,9 @@ The setup script supports multiple AWS authentication methods:
 ## Prerequisites
 
 ### System Requirements
-- Python 3.7+
-- Internet connection for AWS API calls
-- Sufficient disk space for AWS CLI installation
+- Python 3.8+ (uv will manage virtual environments and dependencies)
+- Internet connection for AWS API calls and dependency downloads
+- Sufficient disk space for uv, AWS CLI, and dependencies
 
 ### AWS Account Requirements
 - Valid AWS account with billing enabled
@@ -153,6 +156,12 @@ aws ec2 describe-regions
 cat .env
 ```
 
+**Check uv project status:**
+```bash
+uv tree  # Show dependency tree
+uv run python --version  # Check Python version in virtual env
+```
+
 ## Cost Management
 
 ### Expected Costs
@@ -191,11 +200,34 @@ See `TASKS.md` for detailed implementation tasks.
 
 ```
 cloud-music/
-├── setup_aws.py              # AWS CLI and credential setup
+├── setup_aws.py              # uv and AWS CLI setup script
 ├── check_aws_readiness.py    # Account validation and resource creation
-├── requirements.txt          # Python dependencies
+├── pyproject.toml            # Project configuration and dependencies
 ├── .env.template             # Configuration template
 ├── .env                      # Your configuration (auto-generated)
-├── .gitignore                # Excludes .env from source control
+├── .gitignore                # Excludes .env and keys/ from source control
+├── keys/                     # SSH private keys directory
 └── README_SETUP.md           # This file
+```
+
+## Development Workflow
+
+Once set up, use these commands for development:
+
+```bash
+# Run scripts
+uv run python setup_aws.py
+uv run python check_aws_readiness.py
+
+# Add new dependencies
+uv add boto3  # Add runtime dependency
+uv add --dev pytest  # Add development dependency
+
+# Update dependencies
+uv sync  # Sync with pyproject.toml
+uv lock  # Update lock file
+
+# Check project status
+uv tree  # Show dependency tree
+uv run python --version  # Python version in virtual env
 ```

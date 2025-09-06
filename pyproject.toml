@@ -1,0 +1,39 @@
+# Simple configuration for a script-based project
+[project]
+name = "cloud-music-scripts"
+version = "0.1.0"
+description = "Batch MusicGen generation system using AWS cloud infrastructure"
+requires-python = ">=3.8"
+dependencies = [
+    "boto3>=1.28.0",
+    "python-dotenv>=1.0.0",
+]
+
+[tool.uv]
+# Development dependencies managed by uv
+dev-dependencies = [
+    "pytest>=7.0.0",
+    "black>=23.0.0", 
+    "ruff>=0.1.0",
+]
+
+[tool.black]
+line-length = 88
+target-version = ['py38']
+
+[tool.ruff]
+line-length = 88
+target-version = "py38"
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
+]
+ignore = []
+
+[tool.ruff.isort]
+known-first-party = ["cloud_music"]
